@@ -120,7 +120,7 @@ def main(_):
         sys.exit()
 
 
-class SpaceTeleOperator(object):
+class SpacenavTeleOperator(object):
     """
     This class is responsible for relaying spacenav twists as equilibrium poses
     to the cartesian controller
@@ -131,14 +131,33 @@ class SpaceTeleOperator(object):
         self._name = name
         rospy.loginfo("%s: Spacenav teleop node initialized", self._name)
 
-        sefl._joy_sub = rospy.Subscriber(
+        self._joy_sub = rospy.Subscriber(
             "/spacenav/joy",
             sense_msg.Joy,
             self._joyCallback
         )
+        self._equilibrium_pose_sub = rospy.Subscriber(
+            "/cartesian_impedance_controller/equilibrium_pose",
+            geom_msg.PoseStamped,
+            self._poseCallback
+        )
+        self._equilibrium_pose_pub = rospy.Publisher(
+            "/cartesian_impedance_controller/equilibrium_pose",
+            geom_msg.PoseStamped,
+        )
 
-        dur = rospy.Duration(1.0/self._freq)  # TODO: read from ros params
+    def _joyCallback(self, msg):
+        # rospy.loginfo("%s: Tele-operation node running: left button state, %s"
+        #               %(self._name, msg.buttons[0]))
+        rospy.loginfo("Tele-operation node running: axes state, %s"
+                      %(msg.axes[0]))
 
+    def _poseCallback(self, msg):
+        rospy.loginfo("Current equilibrium pose of the robot: \n %s"
+            %(msg.Pose.position))
 
 if __name__ == "__main__":
-    app.run(main)
+    rospy.init_node('teleop', anonymous=True)
+    teleop_client = SpacenavTeleOperator(rospy.get_name())
+    rospy.spin()
+    # app.run(main)
