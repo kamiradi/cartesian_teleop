@@ -3,12 +3,17 @@ import rospy
 import numpy as np
 import geometry_msgs.msg as geom_msg
 import sensor_msgs.msg as sense_msg
+import tf2_msgs.msg as tf2_msg
+import tf2_ros
 import time
 import subprocess
 from dynamic_reconfigure.client import Client
 from absl import app, flags, logging
 from scipy.spatial.transform import Rotation as R
 import os
+from pydrake.all import (
+    RigidTransform
+)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -131,11 +136,14 @@ class SpacenavTeleOperator(object):
         self._name = name
         rospy.loginfo("%s: Spacenav teleop node initialized", self._name)
 
+        # Declare subscribers
         self._joy_sub = rospy.Subscriber(
             "/spacenav/joy",
             sense_msg.Joy,
             self._joyCallback
         )
+        self._tfBuffer = tf2_ros.Buffer()
+        self._tfListener = tf2_ros.TransformListener(self._tfBuffer)
         self._equilibrium_pose_sub = rospy.Subscriber(
             "/cartesian_impedance_controller/equilibrium_pose",
             geom_msg.PoseStamped,
@@ -144,17 +152,28 @@ class SpacenavTeleOperator(object):
         self._equilibrium_pose_pub = rospy.Publisher(
             "/cartesian_impedance_controller/equilibrium_pose",
             geom_msg.PoseStamped,
+            queue_size=1
         )
 
     def _joyCallback(self, msg):
         # rospy.loginfo("%s: Tele-operation node running: left button state, %s"
         #               %(self._name, msg.buttons[0]))
-        rospy.loginfo("Tele-operation node running: axes state, %s"
-                      %(msg.axes[0]))
+        try:
+            X_EE = self._tfBuffer.lookup_transform(
+                'panda_link0',
+                'panda_EE',
+                rospy.Time())
+        except (tf2_ros.LookupException):
+            return
+        rospy.loginfo("Tele-operation node: end effector transform: %s"
+                      % (X_EE.transform))
+        rospy.loginfo("Tele-operation node: axes state, %s"
+                      % (msg.axes[0]))
 
     def _poseCallback(self, msg):
         rospy.loginfo("Current equilibrium pose of the robot: \n %s"
-            %(msg.Pose.position))
+                      % (msg.Pose.position))
+
 
 if __name__ == "__main__":
     rospy.init_node('teleop', anonymous=True)
