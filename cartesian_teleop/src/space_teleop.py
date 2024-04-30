@@ -170,6 +170,10 @@ class SpacenavTeleOperator(object):
         rospy.loginfo("Tele-operation node: axes state, %s"
                       % (msg.axes[0]))
 
+        # Just update xy messages
+        x = msg.axes[0]
+        y = msg.axes[1]
+
     def _poseCallback(self, msg):
         rospy.loginfo("Current equilibrium pose of the robot: \n %s"
                       % (msg.Pose.position))
