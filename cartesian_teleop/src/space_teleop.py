@@ -193,35 +193,56 @@ class SpacenavTeleOperator(object):
             translation = tf_X_EE.transform.translation
             ori = tf_X_EE.transform.rotation
 
-            dr_quat = Quaternion(np.array([ori.w, ori.x, ori.y, ori.z]))
+            dr_quat = Quaternion(wxyz=np.array([ori.w, ori.x, ori.y, ori.z]))
+
+            # gets current pose of EE
             X_EE = RigidTransform(dr_quat, np.array(
                 [translation.x,
                  translation.y,
                  translation.z]))
+
+            # fixes a fixed frame to the end-effector
+            X_FixedEE = RigidTransform(p=np.array(
+                [translation.x,
+                 translation.y,
+                 translation.z]))
+
+            # transformation between fixed end effector frame and End effector
+            # frame
+            X_FixedEE_EE = X_FixedEE.inverse() @ X_EE
         except (tf2_ros.LookupException, tf2_ros.ExtrapolationException):
             return
-        # rospy.loginfo("Tele-operation node: axes state, %s"
-        #               % (msg.axes[0]))
 
-        # Just update xy messages
+        # extracts joy stick information
         x = msg.axes[0] * self._trans_scale
         y = msg.axes[1] * self._trans_scale
-        z = -msg.axes[2] * self._trans_scale
-        pitch = msg.axes[3] * self._ori_scale
-        roll = msg.axes[4] * self._ori_scale
-        yaw = -msg.axes[5] * self._ori_scale
-        X_EE_delta = RigidTransform(
+        z = msg.axes[2] * self._trans_scale
+        roll = msg.axes[3] * self._ori_scale
+        pitch = msg.axes[4] * self._ori_scale
+        yaw = msg.axes[5] * self._ori_scale
+
+        # constructs transformation of new fixed end effector frame from joy
+        # stick information w.r.t fixed end effector frame
+        X_FixedEE_FixedEEnew = RigidTransform(
             rpy=RollPitchYaw([roll, pitch, yaw]),
             p=[x, y, z])
-        X_EEnew = X_EE @ X_EE_delta
+
+        # Spatial algebra to extract new Fixed end effector w.r.t world
+        X_FixedEEnew = X_FixedEE @ X_FixedEE_FixedEEnew
+
+        # spatial algebra to get new command end effector frame w.r.t world
+        X_EEnew = X_FixedEEnew @ X_FixedEE_EE
+
+        # sets tf with command pose
         t = geom_msg.TransformStamped()
         t.header.stamp = rospy.Time.now()
         t.header.frame_id = "panda_link0"
-        t.child_frame_id = "wp-{}".format(self._debg_cnt)
+        t.child_frame_id = "wp"
         t.transform = to_ros_transform(X_EEnew)
         self._tfBr.sendTransform(t)
 
         if not self._debug:
+            # sends calculated pose to robot
             pose = geom_msg.PoseStamped()
             pose.header.stamp = rospy.Time.now()
             pose.header.frame_id = "e_pose"
