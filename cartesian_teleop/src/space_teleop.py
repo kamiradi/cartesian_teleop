@@ -154,12 +154,14 @@ class SpacenavTeleOperator(object):
 
     """
 
-    def __init__(self, name):
+    def __init__(self, name, debug=True):
         # initialisation message
         self._name = name
         rospy.loginfo("%s: Spacenav teleop node initialized", self._name)
         self._debg_cnt = 0
-        self._scale = 0.05
+        self._trans_scale = 0.05
+        self._ori_scale = 0.2
+        self._debug = debug
 
         # Declare subscribers
         self._joy_sub = rospy.Subscriber(
@@ -196,18 +198,18 @@ class SpacenavTeleOperator(object):
                 [translation.x,
                  translation.y,
                  translation.z]))
-        except (tf2_ros.LookupException):
+        except (tf2_ros.LookupException, tf2_ros.ExtrapolationException):
             return
         # rospy.loginfo("Tele-operation node: axes state, %s"
         #               % (msg.axes[0]))
 
         # Just update xy messages
-        x = msg.axes[0] * self._scale
-        y = msg.axes[1] * self._scale
-        z = -msg.axes[2] * self._scale
-        roll = msg.axes[3] * self._scale
-        pitch = msg.axes[4] * self._scale
-        yaw = msg.axes[5] * self._scale
+        x = msg.axes[0] * self._trans_scale
+        y = msg.axes[1] * self._trans_scale
+        z = -msg.axes[2] * self._trans_scale
+        pitch = msg.axes[3] * self._ori_scale
+        roll = msg.axes[4] * self._ori_scale
+        yaw = -msg.axes[5] * self._ori_scale
         X_EE_delta = RigidTransform(
             rpy=RollPitchYaw([roll, pitch, yaw]),
             p=[x, y, z])
@@ -219,12 +221,13 @@ class SpacenavTeleOperator(object):
         t.transform = to_ros_transform(X_EEnew)
         self._tfBr.sendTransform(t)
 
-        pose = geom_msg.PoseStamped()
-        pose.header.stamp = rospy.Time.now()
-        pose.header.frame_id = "e_pose"
-        pose.pose = to_ros_pose(X_EEnew)
+        if not self._debug:
+            pose = geom_msg.PoseStamped()
+            pose.header.stamp = rospy.Time.now()
+            pose.header.frame_id = "e_pose"
+            pose.pose = to_ros_pose(X_EEnew)
 
-        self._equilibrium_pose_pub.publish(pose)
+            self._equilibrium_pose_pub.publish(pose)
 
     def _poseCallback(self, msg):
         rospy.loginfo("Current equilibrium pose of the robot: \n %s"
@@ -233,6 +236,6 @@ class SpacenavTeleOperator(object):
 
 if __name__ == "__main__":
     rospy.init_node('teleop', anonymous=True)
-    teleop_client = SpacenavTeleOperator(rospy.get_name())
+    teleop_client = SpacenavTeleOperator(rospy.get_name(), False)
     rospy.spin()
     # app.run(main)
