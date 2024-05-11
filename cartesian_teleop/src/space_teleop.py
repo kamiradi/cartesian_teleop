@@ -3,6 +3,7 @@ import rospy
 import numpy as np
 import geometry_msgs.msg as geom_msg
 import sensor_msgs.msg as sense_msg
+import control_msgs.msg as ctrl_msg
 import tf2_msgs.msg as tf2_msg
 import tf2_ros
 import time
@@ -182,9 +183,39 @@ class SpacenavTeleOperator(object):
             geom_msg.PoseStamped,
             queue_size=1
         )
+        self._gripper_cmd_pub = rospy.Publisher(
+            "/gripper_controller/gripper_cmd/goal",
+            ctrl_msg.GripperCommandActionGoal,
+            queue_size=1
+        )
 
     def _joyCallback(self, msg):
         # TODO: remove hard coded tf frame ids
+        button1 = msg.buttons[0]
+        button2 = msg.buttons[1]
+        if button1:
+            rospy.loginfo("Button press event: button 1")
+            action = ctrl_msg.GripperCommandActionGoal()
+            action.header.stamp = rospy.Time.now()
+            goal = ctrl_msg.GripperCommandGoal()
+            cmd = ctrl_msg.GripperCommand()
+            cmd.position = 0.6
+            cmd.max_effort = 50
+            goal.command = cmd
+            action.goal = goal
+            self._gripper_cmd_pub.publish(action)
+        if button2:
+            rospy.loginfo("Button press event: button 2")
+            action = ctrl_msg.GripperCommandActionGoal()
+            action.header.stamp = rospy.Time.now()
+            goal = ctrl_msg.GripperCommandGoal()
+            cmd = ctrl_msg.GripperCommand()
+            cmd.position = 0
+            cmd.max_effort = 50
+            goal.command = cmd
+            action.goal = goal
+            self._gripper_cmd_pub.publish(action)
+
         try:
             tf_X_EE = self._tfBuffer.lookup_transform(
                 'panda_link0',
