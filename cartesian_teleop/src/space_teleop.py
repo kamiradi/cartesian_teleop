@@ -8,10 +8,8 @@ import tf2_msgs.msg as tf2_msg
 import tf2_ros
 import time
 import subprocess
-from dynamic_reconfigure.client import Client
 from absl import app, flags, logging
 from scipy.spatial.transform import Rotation as R
-import os
 from pydrake.all import (
     RigidTransform, Quaternion, RollPitchYaw
 )
@@ -43,109 +41,6 @@ def to_ros_pose(X_AB):
     msg = geom_msg.Pose()
     _write_pose_msg(X_AB, p=msg.position, q=msg.orientation)
     return msg
-
-
-def joyCallback(data):
-    """
-    This callback takes a Joy message, retrieves the relevant twist message. It
-    then integrates the twist into onto the existing equilibrium pose and sends
-    a new command to the cartesian controller
-    """
-    NotImplementedError
-
-
-def main(_):
-    try:
-        input(
-            "\033[33mPress enter to start roscore and the impedance controller.\033[0m")
-        try:
-            roscore = subprocess.Popen('roscore')
-            time.sleep(1)
-        except:
-            pass
-
-        impedence_controller = subprocess.Popen(
-            ['roslaunch',
-             'serl_franka_controllers',
-             'impedance.launch',
-             f'robot_ip:={FLAGS.robot_ip}',
-             f'load_gripper:={FLAGS.load_gripper}'],
-            stdout=subprocess.PIPE)
-
-        eepub = rospy.Publisher(
-            '/cartesian_impedance_controller/equilibrium_pose',
-            geom_msg.PoseStamped, queue_size=10)
-
-        # subscribe to the spacenav joystick topic
-        joysub = rospy.Subscriber(
-            "/spacenav/joy",
-            sense_msg.Joy,
-            joyCallback
-        )
-        rospy.init_node('franka_control_api')
-        client = Client(
-            "/cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node")
-
-        # Reset the arm
-        msg = geom_msg.PoseStamped()
-        msg.header.frame_id = "0"
-        msg.header.stamp = rospy.Time.now()
-        msg.pose.position = geom_msg.Point(0.5, 0, 0.2)
-        quat = R.from_euler('xyz', [np.pi, 0, np.pi/2]).as_quat()
-        msg.pose.orientation = geom_msg.Quaternion(
-            quat[0], quat[1], quat[2], quat[3])
-        input(
-            "\033[33m\nObserve the surroundings. Press enter to move the robot to the initial position.\033[0m")
-        eepub.publish(msg)
-        time.sleep(1)
-
-        time.sleep(1)
-        # Setting the reference limiting values through ros dynamic reconfigure
-        for direction in ['x', 'y', 'z', 'neg_x', 'neg_y', 'neg_z']:
-            client.update_configuration(
-                {"translational_clip_" + direction: 0.005})
-            client.update_configuration({"rotational_clip_" + direction: 0.04})
-        time.sleep(1)
-        print("\nNew reference limiting values has been set")
-
-        time.sleep(1)
-        input("\033[33mPress enter to move the robot up with the reference limiting engaged. Notice that the arm motion should be slower this time because the maximum force is effectively limited. \033[0m")
-        for i in range(10):
-            msg = geom_msg.PoseStamped()
-            msg.header.frame_id = "0"
-            msg.header.stamp = rospy.Time.now()
-            msg.pose.position = geom_msg.Point(0.5, 0, 0.2+i*0.02)
-            quat = R.from_euler('xyz', [np.pi, 0, np.pi/2]).as_quat()
-            msg.pose.orientation = geom_msg.Quaternion(
-                quat[0], quat[1], quat[2], quat[3])
-            eepub.publish(msg)
-            time.sleep(0.2)
-        time.sleep(1)
-
-        time.sleep(1)
-        input(
-            "\033[33m\nPress enter to reset the robot arm back to the initial pose. \033[0m")
-        for i in range(10):
-            msg = geom_msg.PoseStamped()
-            msg.header.frame_id = "0"
-            msg.header.stamp = rospy.Time.now()
-            msg.pose.position = geom_msg.Point(0.5, 0, 0.4-i*0.02)
-            quat = R.from_euler('xyz', [np.pi, 0, np.pi/2]).as_quat()
-            msg.pose.orientation = geom_msg.Quaternion(
-                quat[0], quat[1], quat[2], quat[3])
-            eepub.publish(msg)
-            time.sleep(0.1)
-
-        input(
-            "\033[33m\n \nPress enter to exit the test and stop the controller.\033[0m")
-        impedence_controller.terminate()
-        roscore.terminate()
-        sys.exit()
-    except:
-        rospy.logerr("Error occured. Terminating the controller.")
-        impedence_controller.terminate()
-        roscore.terminate()
-        sys.exit()
 
 
 class SpacenavTeleOperator(object):
@@ -227,20 +122,20 @@ class SpacenavTeleOperator(object):
             dr_quat = Quaternion(wxyz=np.array([ori.w, ori.x, ori.y, ori.z]))
 
             # gets current pose of EE
-            X_EE = RigidTransform(dr_quat, np.array(
+            X_Eeff = RigidTransform(dr_quat, np.array(
                 [translation.x,
                  translation.y,
                  translation.z]))
 
             # fixes a fixed frame to the end-effector
-            X_FixedEE = RigidTransform(p=np.array(
+            X_Fixeff = RigidTransform(p=np.array(
                 [translation.x,
                  translation.y,
                  translation.z]))
 
             # transformation between fixed end effector frame and End effector
             # frame
-            X_FixedEE_EE = X_FixedEE.inverse() @ X_EE
+            X_FixeffEeff = X_Fixeff.inverse() @ X_Eeff
         except (tf2_ros.LookupException, tf2_ros.ExtrapolationException):
             return
 
@@ -254,22 +149,23 @@ class SpacenavTeleOperator(object):
 
         # constructs transformation of new fixed end effector frame from joy
         # stick information w.r.t fixed end effector frame
-        X_FixedEE_FixedEEnew = RigidTransform(
+        X_Fixeff_Fixeffnew = RigidTransform(
             rpy=RollPitchYaw([roll, pitch, yaw]),
             p=[x, y, z])
 
         # Spatial algebra to extract new Fixed end effector w.r.t world
-        X_FixedEEnew = X_FixedEE @ X_FixedEE_FixedEEnew
+        X_Fixeffnew = X_Fixeff @ X_Fixeff_Fixeffnew
 
         # spatial algebra to get new command end effector frame w.r.t world
-        X_EEnew = X_FixedEEnew @ X_FixedEE_EE
+        # QUE: Why is this working?
+        X_Eeffnew = X_Fixeffnew @ X_FixeffEeff
 
         # sets tf with command pose
         t = geom_msg.TransformStamped()
         t.header.stamp = rospy.Time.now()
         t.header.frame_id = "panda_link0"
         t.child_frame_id = "wp"
-        t.transform = to_ros_transform(X_EEnew)
+        t.transform = to_ros_transform(X_Eeffnew)
         self._tfBr.sendTransform(t)
 
         if not self._debug:
@@ -277,7 +173,7 @@ class SpacenavTeleOperator(object):
             pose = geom_msg.PoseStamped()
             pose.header.stamp = rospy.Time.now()
             pose.header.frame_id = "e_pose"
-            pose.pose = to_ros_pose(X_EEnew)
+            pose.pose = to_ros_pose(X_Eeffnew)
 
             self._equilibrium_pose_pub.publish(pose)
 
