@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import sys
 import rospy
 import numpy as np
