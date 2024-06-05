@@ -56,11 +56,13 @@ class SpacenavTeleOperator(object):
     def __init__(self, name, debug=True):
         # initialisation message
         self._name = name
-        rospy.loginfo("%s: Spacenav teleop node initialized", self._name)
         self._debg_cnt = 0
         self._trans_scale = 0.05
         self._ori_scale = 0.2
         self._debug = debug
+        self.start_srv = "/ae_ros/start_estimation"
+        self.stop_srv = "/ae_ros/stop_estimation"
+        self.reset_srv = "/ae_ros/reset_estimation"
 
         # Declare subscribers
         self._joy_sub = rospy.Subscriber(
@@ -86,6 +88,32 @@ class SpacenavTeleOperator(object):
             ctrl_msg.GripperCommandActionGoal,
             queue_size=1
         )
+        # start estimation service
+        rospy.wait_for_service(self.start_srv)
+        try:
+            self._start_estimation_srv = rospy.ServiceProxy(
+                self.start_srv, Empty)
+        except rospy.ServiceException as e:
+            rospy.logwarn("Failed to find service: %s", e)
+
+        # stop estimation service
+        rospy.wait_for_service(self.stop_srv)
+        try:
+            self._stop_estimation_srv = rospy.ServiceProxy(
+                self.stop_srv, Empty)
+        except rospy.ServiceException as e:
+            rospy.logwarn("Failed to find service: %s", e)
+
+        # reset estimation service
+        rospy.wait_for_service(self.reset_srv)
+        try:
+            self._reset_estimation_srv = rospy.ServiceProxy(
+                self.reset_srv, Empty)
+        except rospy.ServiceException as e:
+            rospy.logwarn("Failed to find service: %s", e)
+
+        rospy.loginfo("Found all estimation services")
+        rospy.loginfo("Estimation teleop node initialized")
 
     def _joyCallback(self, msg):
         # TODO: remove hard coded tf frame ids
@@ -94,29 +122,15 @@ class SpacenavTeleOperator(object):
         if button1:
             # send a static transform
             # start the estimation service
-            rospy.loginfo("Button press event: button 1")
-            action = ctrl_msg.GripperCommandActionGoal()
-            action.header.stamp = rospy.Time.now()
-            goal = ctrl_msg.GripperCommandGoal()
-            cmd = ctrl_msg.GripperCommand()
-            cmd.position = 0.6
-            cmd.max_effort = 50
-            goal.command = cmd
-            action.goal = goal
-            self._gripper_cmd_pub.publish(action)
+            try:
+                success = self._start_estimation_srv()
+            except Exception as e:
+                rospy.logwarn("service call failed: %s", e)
+
         if button2:
             # stop the estimation service
             # report all estimated variables
-            rospy.loginfo("Button press event: button 2")
-            action = ctrl_msg.GripperCommandActionGoal()
-            action.header.stamp = rospy.Time.now()
-            goal = ctrl_msg.GripperCommandGoal()
-            cmd = ctrl_msg.GripperCommand()
-            cmd.position = 0
-            cmd.max_effort = 50
-            goal.command = cmd
-            action.goal = goal
-            self._gripper_cmd_pub.publish(action)
+            self._stop_estimation_srv()
 
         try:
             tf_X_EE = self._tfBuffer.lookup_transform(
