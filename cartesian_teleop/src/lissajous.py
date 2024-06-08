@@ -68,7 +68,11 @@ class Lissajous(object):
 
     """
 
-    def __init__(self, name, debug=True):
+    def __init__(
+            self,
+            name,
+            lissajous_params,
+            debug=True):
         # initialisation message
         self._name = name
         rospy.loginfo("%s: Spacenav teleop node initialized", self._name)
@@ -76,6 +80,7 @@ class Lissajous(object):
         self._trans_scale = 0.05
         self._ori_scale = 0.2
         self._debug = debug
+        self._lissajous_params = lissajous_params
 
         # Declare subscribers
         self._joy_sub = rospy.Subscriber(
@@ -141,12 +146,7 @@ class Lissajous(object):
                 return
 
         # construct the lissajous curve here
-        A = 0.1
-        a = 0.05
-        B = 0.1
-        b = 0.06
-        delta = np.pi/2
-        x, y = lissajous(A, B, a, b, delta, self._idx)
+        x, y = lissajous(*self._lissajous_params, self._idx)
         z = 0
         q_w, q_x, q_y, q_z = 1, 0, 0, 0
         lissa_quat = Quaternion(wxyz=np.array(
@@ -285,6 +285,13 @@ class Lissajous(object):
 
 if __name__ == "__main__":
     rospy.init_node('lissajous', anonymous=True)
-    teleop_client = Lissajous(rospy.get_name(), False)
+
+    # In the order A, B, a, b, delta
+    # A = amplitude of sin wave along x
+    # B = amplitude of sin wave along y
+    # a = frequency of sin along x
+    # b = frequency of sin along y
+    lissajous_params = (0.1, 0.1, 0.02, 0.02, np.pi/2)
+    teleop_client = Lissajous(rospy.get_name(), lissajous_params, False)
     rospy.spin()
     # app.run(main)
